@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full bg-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>双向借还款与往来台账系统 - 移动大字版</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2canvas for Screenshot Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+            font-size: 15px;
+        }
+        /* 关键：iOS 上 16px 以下输入控件会自动放大页面，此处统一兜底 */
+        input, select, textarea { font-size: 16px !important; }
+        input, select { min-height: 46px; }
+        textarea { min-height: 68px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 1rem); }
+        .num { font-variant-numeric: tabular-nums; }
+        /* 移动端触摸回弹感 */
+        .tap:active { transform: scale(0.97); }
+        .tap { transition: transform .12s ease, background-color .12s ease; }
+        /* 对账单表格：列间淡细线 */
+        #statementCaptureArea table th:not(:last-child) { border-right: 1px solid rgba(255,255,255,.14); }
+        #statementCaptureArea table td:not(:last-child) { border-right: 1px solid rgba(226,232,240,.85); }
+        /* 区间合计行：弱化列间线、顶部加靛蓝分隔线 */
+        #statementCaptureArea table .stmt-total-row td:not(:last-child) { border-right-color: rgba(255,255,255,.08); }
+        #statementCaptureArea table .stmt-total-row { border-top: 2px solid #4338ca; }
+        /* Toast */
+        #toastBox { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; width: max-content; max-width: 100%; }
+        .toast-item { background: rgba(15,23,42,.92); color: #fff; font-size: 14px; font-weight: 500; padding: 11px 22px; border-radius: 999px; box-shadow: 0 8px 24px rgba(0,0,0,.2); animation: toastIn .22s ease; white-space: nowrap; }
+        .toast-undo { display: flex; align-items: center; gap: 12px; pointer-events: auto; white-space: normal; max-width: calc(100vw - 32px); text-align: left; border-radius: 14px; }
+        .toast-undo button { color: #6ee7b7; font-weight: 700; font-size: 14px; padding: 6px 12px; border-radius: 10px; background: rgba(255,255,255,.15); white-space: nowrap; flex-shrink: 0; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        mark { background: #fef08a; color: #0f172a; border-radius: 3px; padding: 0 1px; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-full flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-indigo-900 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-indigo-700/80 flex items-center justify-center border border-indigo-500/30 shrink-0">
+                    <i class="fa-solid fa-scale-balanced text-indigo-100 text-lg"></i>
+                </div>
+                <div class="min-w-0">
+                    <h1 class="text-[17px] font-bold leading-tight truncate">往来台账管理</h1>
+                    <p class="text-[11px] text-indigo-300 leading-tight truncate">移动大字版 · 支持一键再记</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-1.5 shrink-0">
+                <button onclick="openNewTransaction()" class="tap bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-3.5 py-2.5 rounded-xl text-[14px] font-semibold shadow-sm flex items-center gap-1.5">
+                    <i class="fa-solid fa-plus text-[13px]"></i>
+                    <span>记一笔</span>
+                </button>
+                <button onclick="openBackupModal()" class="tap text-indigo-200 hover:text-white w-11 h-11 rounded-xl flex items-center justify-center active:bg-white/10" title="备份与导出">
+                    <i class="fa-solid fa-database text-lg"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container with Tabs -->
+    <main class="flex-1 max-w-4xl w-full mx-auto px-3.5 py-3.5 flex flex-col gap-3.5 overflow-y-auto custom-scrollbar pb-24">
+
+        <!-- Mobile View Navigation Tabs -->
+        <div class="bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 flex text-[15px] font-semibold">
+            <button id="tabBtnDashboard" onclick="switchTab('dashboard')" class="flex-1 py-3 rounded-xl text-center transition-all bg-indigo-600 text-white shadow-sm">
+                <i class="fa-solid fa-chart-pie mr-1"></i> 概览与全量
+            </button>
+            <button id="tabBtnStatement" onclick="switchTab('statement')" class="flex-1 py-3 rounded-xl text-center transition-all text-slate-600 hover:bg-slate-50">
+                <i class="fa-solid fa-file-invoice-dollar mr-1"></i> 个人对账单
+            </button>
+        </div>
+
+        <!-- TAB 1: Dashboard & Global Ledger -->
+        <div id="tabDashboard" class="space-y-3.5">
+            <!-- Financial Summary Cards -->
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200">
+                    <div class="text-[13px] font-medium text-slate-500 leading-tight">我借出总额 (资产)</div>
+                    <div id="statLentTotal" class="text-[22px] leading-tight font-extrabold text-blue-600 mt-1.5 num">¥0.00</div>
+                    <div id="statLentCount" class="text-[11px] text-slate-400 mt-1 leading-snug">累计借出 ¥0.00 · 0笔</div>
+                </div>
+
+                <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200">
+                    <div class="text-[13px] font-medium text-slate-500 leading-tight">我借入总额 (负债)</div>
+                    <div id="statBorrowedTotal" class="text-[22px] leading-tight font-extrabold text-amber-600 mt-1.5 num">¥0.00</div>
+                    <div id="statBorrowedCount" class="text-[11px] text-slate-400 mt-1 leading-snug">累计借入 ¥0.00 · 0笔</div>
+                </div>
+
+                <div class="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200">
+                    <div class="text-[13px] font-medium text-slate-500 leading-tight">综合结算净额</div>
+                    <div id="statNetBalance" class="text-[22px] leading-tight font-extrabold text-slate-800 mt-1.5 num">¥0.00</div>
+                    <div id="statNetBadge" class="text-[12px] text-slate-500 mt-1 font-medium">平衡</div>
+                </div>
+
+                <div class="bg-indigo-900 text-white rounded-2xl p-3.5 shadow-sm border border-indigo-800 flex flex-col justify-between">
+                    <div>
+                        <div class="text-[13px] text-indigo-300 leading-tight">往来联系人</div>
+                        <div id="statContactCount" class="text-[22px] leading-tight font-bold mt-1.5">0 位</div>
+                    </div>
+                    <button onclick="openContactManager()" class="tap text-[12px] bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg transition-all w-fit mt-1.5 font-medium">
+                        管理对象
+                    </button>
+                </div>
+            </div>
+
+            <!-- Toolbar & Filter -->
+            <div class="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-2.5">
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 text-[15px]">
+                            <i class="fa-solid fa-search"></i>
+                        </span>
+                        <input type="text" id="searchInput" oninput="renderTable()" placeholder="搜索姓名 / 事由 / 备注" class="w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400">
+                    </div>
+                    <button onclick="resetFilters()" class="tap text-[14px] font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 px-4 rounded-xl shrink-0">重置</button>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <select id="filterType" onchange="renderTable()" class="bg-slate-50 border border-slate-200 rounded-xl px-3.5 text-base text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <option value="">全部收支分类</option>
+                        <option value="lend">我借给对方 (借出)</option>
+                        <option value="borrow">对方借给我 (借入)</option>
+                        <option value="repay_in">对方还给我 (收回)</option>
+                        <option value="repay_out">我还给对方 (归还)</option>
+                    </select>
+                    <select id="filterContact" onchange="renderTable()" class="bg-slate-50 border border-slate-200 rounded-xl px-3.5 text-base text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <option value="">全部往来对象</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Result Count -->
+            <div class="flex items-center justify-between px-1 text-[13px] text-slate-500">
+                <span>共 <b id="visibleCount" class="text-indigo-700 num">0</b> 笔记录</span>
+                <span class="text-slate-400">按日期倒序</span>
+            </div>
+
+            <!-- Mobile Stream Cards View -->
+            <div id="transactionCardsContainer" class="space-y-3">
+                <!-- Populated dynamically -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden bg-white rounded-2xl p-10 text-center border border-slate-200">
+                <i class="fa-solid fa-folder-open text-slate-300 text-4xl mb-3"></i>
+                <p class="text-[15px] text-slate-500">暂无相关的往来记录</p>
+            </div>
+        </div>
+
+        <!-- TAB 2: Individual Personal Statement -->
+        <div id="tabStatement" class="hidden space-y-3.5">
+            <!-- Selector & Filter Header -->
+            <div class="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-3">
+                <div class="flex flex-col gap-2.5">
+                    <div class="flex items-center gap-2">
+                        <label class="text-[14px] font-bold text-slate-700 shrink-0">往来人:</label>
+                        <select id="statementContactSelect" onchange="renderPersonalStatement()" class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 text-base font-semibold text-indigo-900 focus:ring-2 focus:ring-indigo-500/40">
+                            <!-- Populated by JS -->
+                        </select>
+                    </div>
+                    <button id="captureBtn" onclick="captureStatementScreenshot()" class="tap w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-3 rounded-xl text-[15px] font-semibold shadow-sm flex items-center justify-center gap-2 transition-all">
+                        <i class="fa-solid fa-camera"></i>
+                        <span>生成对账单图片 (Safari 优选)</span>
+                    </button>
+                    <p class="text-[12px] text-slate-400 text-center leading-relaxed"><i class="fa-solid fa-circle-info mr-1"></i>截图自动隐藏“凭证”列；斑马纹、月份分组、合计行与备注均保留</p>
+                </div>
+
+                <!-- 类型快捷筛选（动态渲染） -->
+                <div class="flex flex-col gap-2 pt-3 border-t border-slate-100" id="stmtTypeFilterArea">
+                    <span class="text-[14px] font-bold text-slate-700"><i class="fa-solid fa-filter text-indigo-600 mr-1.5"></i>类型快速筛选</span>
+                    <div class="flex flex-wrap gap-1.5" id="stmtTypeFilterBtns"></div>
+                </div>
+
+                <!-- Date Range Filter Area -->
+                <div class="flex flex-col gap-2 pt-3 border-t border-slate-100">
+                    <span class="text-[14px] font-bold text-slate-700"><i class="fa-regular fa-calendar-days text-indigo-600 mr-1.5"></i>日期筛选</span>
+                    <div class="flex items-center gap-2">
+                        <input type="date" id="stmtStartDate" onchange="renderPersonalStatement()" class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <span class="text-slate-400 text-[14px] shrink-0">至</span>
+                        <input type="date" id="stmtEndDate" onchange="renderPersonalStatement()" class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <button onclick="clearStatementDateFilter()" class="tap text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 h-[46px] rounded-xl transition-colors text-[13px] font-medium shrink-0">重置</button>
+                    </div>
+                </div>
+
+                <!-- 对账单备注 -->
+                <div class="flex flex-col gap-2 pt-3 border-t border-slate-100">
+                    <span class="text-[14px] font-bold text-slate-700"><i class="fa-regular fa-note-sticky text-indigo-600 mr-1.5"></i>对账单备注（选填）</span>
+                    <input type="text" id="stmtRemark" oninput="saveStmtRemark()" placeholder="如：截至今日核对无误 / 仅含2026年交易" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                    <p class="text-[11px] text-slate-400 leading-relaxed">备注会显示在对账单底部与导出截图中，不写入交易数据。</p>
+                </div>
+            </div>
+
+            <!-- Statement Certificate Area -->
+            <div id="statementCaptureArea" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 space-y-4">
+                <!-- Certificate Header -->
+                <div class="border-b border-slate-200 pb-3.5 flex justify-between items-start gap-2">
+                    <div class="min-w-0">
+                        <h2 class="text-[17px] sm:text-lg font-bold text-indigo-950 flex items-center gap-1.5 leading-snug">
+                            <i class="fa-solid fa-file-contract text-indigo-600"></i>
+                            <span id="stmtPersonTitle" class="break-words">个人往来对账明细表</span>
+                        </h2>
+                        <p class="text-[12px] text-slate-400 mt-1">往来资金账目清晰核对清单与交易后实时结余</p>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <span class="text-[11px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md border border-indigo-100 font-medium whitespace-nowrap">官方对账凭证</span>
+                        <div id="stmtDateStr" class="text-[11px] text-slate-400 mt-1.5"></div>
+                    </div>
+                </div>
+
+                <!-- 关系方向提示 -->
+                <div id="stmtDirectionHint" class="hidden text-[12px] leading-relaxed text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex items-start gap-2">
+                    <i class="fa-solid fa-circle-info text-slate-400 text-[13px] shrink-0 mt-0.5"></i>
+                    <span id="stmtDirectionText"></span>
+                </div>
+
+                <!-- Personal Summary Cards（标签与配色按方向动态变化） -->
+                <div class="grid grid-cols-3 gap-2 text-center bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                    <div>
+                        <div class="text-[12px] text-slate-500" id="stmtCard1Label">区间借出</div>
+                        <div id="stmtLentSum" class="text-[14px] sm:text-base font-bold text-blue-600 mt-1 num">¥0.00</div>
+                    </div>
+                    <div class="border-x border-slate-200">
+                        <div class="text-[12px] text-slate-500" id="stmtCard2Label">区间收回</div>
+                        <div id="stmtRepayInSum" class="text-[14px] sm:text-base font-bold text-emerald-600 mt-1 num">¥0.00</div>
+                    </div>
+                    <div>
+                        <div class="text-[12px] text-slate-500">当前结算余额</div>
+                        <div id="stmtCurrentBalance" class="text-[14px] sm:text-base font-extrabold text-indigo-900 mt-1 num">¥0.00</div>
+                    </div>
+                </div>
+
+                <!-- Balance Legend Info -->
+                <div class="text-[12px] leading-relaxed text-slate-500 bg-amber-50/70 border border-amber-100 rounded-xl p-2.5 flex items-start gap-2">
+                    <i class="fa-solid fa-circle-info text-amber-600 text-[13px] shrink-0 mt-0.5"></i>
+                    <span>余额说明：正数表示<b class="text-blue-700">对方欠我 (债权)</b>；负数表示<b class="text-amber-700">我欠对方 (债务)</b>；按时间正序计算变动结余。</span>
+                </div>
+
+                <!-- 类型筛选提示 -->
+                <div id="stmtFilterHint" class="hidden text-[12px] leading-relaxed text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-start gap-2">
+                    <i class="fa-solid fa-filter text-indigo-500 text-[13px] shrink-0 mt-0.5"></i>
+                    <span id="stmtFilterHintText">已按类型筛选：表格仅显示所选类型，余额列仍按全部交易累计。</span>
+                </div>
+
+                <!-- Timeline Statement List -->
+                <div class="overflow-x-auto custom-scrollbar -mx-1 px-1">
+                    <table class="w-full text-left border-collapse text-[13px] min-w-[720px]">
+                        <thead>
+                            <tr class="bg-indigo-900 text-white font-medium">
+                                <th class="py-2.5 px-2.5 rounded-l-lg whitespace-nowrap sticky left-0 z-20 bg-indigo-900 min-w-[92px] border-r border-indigo-800 text-[12px]">日期</th>
+                                <th class="py-2.5 px-2 whitespace-nowrap text-[12px]">类型</th>
+                                <th class="py-2.5 px-2 text-right whitespace-nowrap text-[12px]">发生金额</th>
+                                <th class="py-2.5 px-2 whitespace-nowrap text-[12px]">收付款方式</th>
+                                <th class="py-2.5 px-2 text-right whitespace-nowrap text-[12px]">交易后余额</th>
+                                <th class="py-2.5 px-2 whitespace-nowrap proof-col text-[12px]">凭证</th>
+                                <th class="py-2.5 px-2.5 rounded-r-lg text-[12px]">事由/备注</th>
+                            </tr>
+                        </thead>
+                        <tbody id="statementTableBody" class="divide-y divide-slate-100 text-slate-700">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-[12px] text-slate-400 text-center sm:hidden"><i class="fa-solid fa-arrows-left-right mr-1"></i>左右滑动，日期列固定</p>
+
+                <!-- 对账单备注显示 -->
+                <div id="stmtRemarkDisplay" class="hidden flex items-start gap-2 text-[12px] leading-relaxed text-amber-900 bg-amber-50/80 border border-amber-200 rounded-xl px-3 py-2.5">
+                    <i class="fa-regular fa-note-sticky text-amber-600 text-[13px] mt-0.5 shrink-0"></i>
+                    <div class="min-w-0"><span class="font-semibold">备注：</span><span id="stmtRemarkText" class="break-words"></span></div>
+                </div>
+
+                <!-- Footer Sign Section -->
+                <div class="pt-4 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-[11px] text-slate-400">
+                    <div>系统生成时间: <span id="stmtGenerateTime"></span></div>
+                    <div>核对人确认签名: ____________</div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Toast Container -->
+    <div id="toastBox"></div>
+
+    <!-- Modal: Safari Mobile Export Result Preview (Long Press to Save) -->
+    <div id="exportPreviewModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden flex flex-col items-center justify-center p-3">
+        <div class="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+            <div class="bg-indigo-900 text-white px-4 py-3.5 flex items-center justify-between shrink-0">
+                <h3 class="font-bold text-[15px] flex items-center gap-2">
+                    <i class="fa-solid fa-circle-check text-emerald-400"></i>
+                    <span>对账单图片已就绪</span>
+                </h3>
+                <button onclick="closeModal('exportPreviewModal')" class="text-indigo-200 hover:text-white w-10 h-10 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-3 text-center bg-indigo-50/80 border-b border-indigo-100 shrink-0">
+                <p class="text-[14px] font-bold text-indigo-950 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-hand-pointer text-indigo-600 animate-bounce"></i>
+                    长按下方图片，选择“保存到相册”
+                </p>
+            </div>
+            <div class="p-3 overflow-y-auto custom-scrollbar flex-1 flex justify-center bg-slate-100">
+                <img id="exportResultImg" class="max-w-full rounded-lg shadow-md object-contain border border-slate-200" src="" alt="生成对账单图">
+            </div>
+            <div class="p-3 bg-white border-t border-slate-200 flex justify-between items-center shrink-0 pb-safe">
+                <span class="text-[12px] text-slate-400">已自动隐藏凭证列</span>
+                <button onclick="closeModal('exportPreviewModal')" class="tap bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[15px] font-semibold">完成</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Add/Edit/Repeat Transaction -->
+    <div id="transactionModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 max-h-[92vh] flex flex-col">
+            <div class="bg-indigo-900 text-white px-5 py-4 flex items-center justify-between shrink-0">
+                <h3 id="modalTitle" class="font-bold text-[16px] flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-indigo-300"></i>
+                    <span>记一笔双向往来账</span>
+                </h3>
+                <button onclick="closeModal('transactionModal')" class="text-indigo-200 hover:text-white w-10 h-10 -mr-2 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <form id="transactionForm" onsubmit="saveTransaction(event)" class="p-5 space-y-4 overflow-y-auto custom-scrollbar">
+                <input type="hidden" id="transId">
+
+                <!-- 复制模式提示条 -->
+                <div id="copyBanner" class="hidden bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed flex items-start gap-2">
+                    <i class="fa-solid fa-copy text-emerald-600 mt-0.5 shrink-0"></i>
+                    <span id="copyBannerText">已复制上笔信息，日期已设为今天，请核对金额与备注</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">流水类型 *</label>
+                        <select id="transType" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 text-slate-800 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none">
+                            <option value="lend">我借出</option>
+                            <option value="borrow">我借入</option>
+                            <option value="repay_in">收回还款</option>
+                            <option value="repay_out">归还欠款</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">发生日期 *</label>
+                        <input type="date" id="transDate" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 text-slate-800 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">往来对象 *</label>
+                        <select id="transContact" required class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 text-slate-800 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none">
+                            <!-- Populated by JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">金额 (元) *</label>
+                        <input type="number" step="0.01" min="0.01" id="transAmount" required placeholder="0.00" inputmode="decimal" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 font-bold text-indigo-700 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">项目分类</label>
+                        <input type="text" id="transCategory" placeholder="如：借款/周转" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 text-slate-800 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">收付款方式</label>
+                        <select id="transMethod" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 text-slate-800 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none">
+                            <option value="微信支付">微信支付</option>
+                            <option value="支付宝">支付宝</option>
+                            <option value="银行转账">银行转账</option>
+                            <option value="现金">现金交易</option>
+                            <option value="其他">其他方式</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">交易凭证/截图 <span class="font-normal text-slate-400 text-[12px]">(支持电脑端 Ctrl+V 粘贴)</span></label>
+                    <div class="flex items-center gap-2.5">
+                        <label class="tap cursor-pointer bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl px-4 py-2.5 text-[14px] text-slate-700 font-medium flex items-center gap-2">
+                            <i class="fa-solid fa-upload"></i>
+                            <span>选择图片</span>
+                            <input type="file" id="transProofInput" accept="image/*" onchange="handleImageUpload(event)" class="hidden">
+                        </label>
+                        <span class="text-[12px] text-slate-400 leading-tight">转账截图、借条影印等</span>
+                    </div>
+                    <div id="proofPreviewContainer" class="mt-2.5 hidden relative w-24 h-24 border rounded-xl overflow-hidden border-slate-300">
+                        <img id="proofPreviewImg" class="w-full h-full object-cover" src="" alt="凭证预览">
+                        <button type="button" onclick="removeProofImage()" class="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-[11px] shadow-lg">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[13px] font-semibold text-slate-600 mb-1.5">备注说明</label>
+                    <textarea id="transNote" rows="2" placeholder="约定还款时间或凭证编号..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none resize-none"></textarea>
+                </div>
+
+                <div class="flex items-center justify-end space-x-2.5 pt-4 border-t border-slate-200 pb-safe">
+                    <button type="button" onclick="closeModal('transactionModal')" class="tap bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-3 rounded-xl text-[15px] font-medium">取消</button>
+                    <button type="submit" class="tap bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl text-[15px] font-semibold shadow-sm">保存流水</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Contact Manager -->
+    <div id="contactModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200">
+            <div class="bg-indigo-900 text-white px-4 py-3.5 flex items-center justify-between">
+                <h3 class="font-bold text-[15px] flex items-center gap-2">
+                    <i class="fa-solid fa-address-book text-indigo-300"></i>
+                    <span>往来联系人管理</span>
+                </h3>
+                <button onclick="closeModal('contactModal')" class="text-indigo-200 hover:text-white w-10 h-10 -mr-2 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-3">
+                <div class="flex gap-2">
+                    <input type="text" id="newContactName" placeholder="新姓名或公司名..." class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 text-slate-800 focus:ring-2 focus:ring-indigo-500/40 focus:outline-none">
+                    <button onclick="addContact()" class="tap bg-indigo-600 text-white px-4 rounded-xl text-[14px] font-semibold shrink-0">添加</button>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">有关联记录的联系人不能删除，以保证历史对账单可查。</p>
+                <div class="border border-slate-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto custom-scrollbar">
+                    <ul id="contactListUl" class="divide-y divide-slate-100 text-[15px]">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </div>
+            <div class="bg-slate-50 px-4 py-3 border-t border-slate-200 flex justify-end pb-safe">
+                <button onclick="closeModal('contactModal')" class="tap bg-slate-800 text-white px-5 py-2.5 rounded-xl text-[14px] font-medium">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Image Preview High-Res Modal -->
+    <div id="imagePreviewModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden flex items-center justify-center p-4" onclick="closeModal('imagePreviewModal')">
+        <div class="relative max-w-2xl max-h-[90vh] overflow-hidden rounded-xl bg-black p-2 flex flex-col items-center justify-center" onclick="event.stopPropagation()">
+            <img id="highResImage" class="max-w-full max-h-[80vh] object-contain rounded-lg" src="" alt="凭证大图">
+            <button onclick="closeModal('imagePreviewModal')" class="absolute top-3 right-3 bg-white/20 hover:bg-white/40 text-white rounded-full w-10 h-10 flex items-center justify-center text-base backdrop-blur">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal: Backup & Restore -->
+    <div id="backupModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200">
+            <div class="bg-indigo-900 text-white px-4 py-3.5 flex items-center justify-between">
+                <h3 class="font-bold text-[15px] flex items-center gap-2">
+                    <i class="fa-solid fa-database text-indigo-300"></i>
+                    <span>数据备份与管理</span>
+                </h3>
+                <button onclick="closeModal('backupModal')" class="text-indigo-200 hover:text-white w-10 h-10 -mr-2 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-3.5 text-[14px]">
+                <div id="backupStats" class="text-[12px] leading-relaxed text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"></div>
+                <p class="text-[11px] text-rose-500 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-1"></i>数据仅存储在本地浏览器，清理浏览器数据或更换设备会丢失，请定期导出备份。</p>
+                <button onclick="exportJSONBackup()" class="tap w-full bg-indigo-50 border border-indigo-200 text-indigo-900 py-3 rounded-xl font-semibold flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-download"></i> 导出 JSON 数据备份
+                </button>
+                <div class="border-t border-slate-200 pt-3.5">
+                    <label class="block text-[13px] font-semibold text-slate-600 mb-2">导入 JSON 数据（覆盖当前数据）</label>
+                    <input type="file" id="importFile" accept=".json" class="w-full text-slate-500 text-[13px] file:mr-2.5 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 file:text-[13px] file:font-medium">
+                    <button onclick="importJSONBackup()" class="tap w-full bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-xl font-semibold mt-2.5">导入并覆盖系统数据</button>
+                </div>
+            </div>
+            <div class="bg-slate-50 px-4 py-3 border-t border-slate-200 flex justify-end pb-safe">
+                <button onclick="closeModal('backupModal')" class="tap bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-[14px] font-medium">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // Initial Seed Data
+        const defaultContacts = ["张三", "李四 (合伙人)", "王五 (同事)", "阳光科技有限公司"];
+        const defaultTransactions = [
+            { id: "1", date: "2026-01-15", contact: "张三", type: "lend", amount: 10000.00, category: "资金周转", method: "银行转账", proof: "", note: "约定3个月后归还，免息" },
+            { id: "2", date: "2026-02-10", contact: "李四 (合伙人)", type: "borrow", amount: 5000.00, category: "垫付货款", method: "微信支付", proof: "", note: "临时采购急用" },
+            { id: "3", date: "2026-03-01", contact: "张三", type: "repay_in", amount: 3000.00, category: "分期归还", method: "银行转账", proof: "", note: "第一期部分还款" }
+        ];
+
+        // System State
+        let contacts = JSON.parse(localStorage.getItem('ledger_contacts')) || defaultContacts;
+        let transactions = JSON.parse(localStorage.getItem('ledger_transactions')) || defaultTransactions;
+        let activeTab = 'dashboard';
+        let currentProofBase64 = '';
+        let lastSavedId = null;
+        let isSaving = false;
+        let skipCloseConfirm = false;
+        let undoAction = null;
+        let stmtTypeFilter = '';
+        let stmtRemark = localStorage.getItem('ledger_stmt_remark') || '';
+
+        const MODAL_IDS = ['transactionModal', 'contactModal', 'backupModal', 'imagePreviewModal', 'exportPreviewModal'];
+        const TYPE_LABELS = { lend: '借出', borrow: '借入', repay_in: '收回还款', repay_out: '归还欠款' };
+
+        // ---------- 安全与工具 ----------
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function escapeRegExp(s) {
+            return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+        function highlight(text, keyword) {
+            const safe = escapeHtml(text);
+            if (!keyword) return safe;
+            try {
+                const re = new RegExp('(' + escapeRegExp(escapeHtml(keyword)) + ')', 'gi');
+                return safe.replace(re, '<mark>$1</mark>');
+            } catch (e) { return safe; }
+        }
+        function formatCurrency(num) {
+            return '¥' + Number(num || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function txDelta(t) {
+            if (!t) return 0;
+            if (t.type === 'lend') return t.amount;
+            if (t.type === 'borrow') return -t.amount;
+            if (t.type === 'repay_in') return -t.amount;
+            if (t.type === 'repay_out') return t.amount;
+            return 0;
+        }
+        function showToast(msg) {
+            const box = document.getElementById('toastBox');
+            const el = document.createElement('div');
+            el.className = 'toast-item';
+            el.textContent = msg;
+            box.appendChild(el);
+            setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, 1600);
+            setTimeout(() => el.remove(), 1950);
+        }
+        function showUndoToast(msg, onUndo) {
+            if (undoAction) {
+                clearTimeout(undoAction.timer);
+                const old = document.getElementById(undoAction.elId);
+                if (old) old.remove();
+                undoAction = null;
+            }
+            const elId = 'undo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            const box = document.getElementById('toastBox');
+            const el = document.createElement('div');
+            el.id = elId;
+            el.className = 'toast-item toast-undo';
+            const span = document.createElement('span');
+            span.textContent = msg;
+            const btn = document.createElement('button');
+            btn.textContent = '撤销';
+            btn.onclick = () => {
+                clearTimeout(undoAction.timer);
+                el.remove();
+                undoAction = null;
+                onUndo();
+                showToast('已撤销');
+            };
+            el.appendChild(span);
+            el.appendChild(btn);
+            box.appendChild(el);
+            const timer = setTimeout(() => {
+                el.remove();
+                if (undoAction && undoAction.elId === elId) undoAction = null;
+            }, 5000);
+            undoAction = { timer, elId };
+        }
+
+        // ---------- 持久化 ----------
+        function saveData() {
+            try {
+                localStorage.setItem('ledger_contacts', JSON.stringify(contacts));
+                localStorage.setItem('ledger_transactions', JSON.stringify(transactions));
+            } catch (err) {
+                console.error(err);
+                const quota = err.name === 'QuotaExceededError' || err.code === 22;
+                alert(quota
+                    ? '保存到本地失败：存储空间不足，通常是凭证图片过多。请先导出备份，然后删除部分旧凭证图片再试。'
+                    : '保存到本地失败：' + err.message);
+                return false;
+            }
+            updateDashboard();
+            renderTable();
+            updateContactDropdowns();
+            if (activeTab === 'statement') renderPersonalStatement();
+            return true;
+        }
+
+        window.onload = function () {
+            document.getElementById('transDate').valueAsDate = new Date();
+            updateContactDropdowns();
+            updateDashboard();
+            renderTable();
+
+            stmtRemark = localStorage.getItem('ledger_stmt_remark') || '';
+            const remarkInput = document.getElementById('stmtRemark');
+            if (remarkInput) remarkInput.value = stmtRemark;
+            updateStmtRemarkDisplay();
+
+            document.addEventListener('paste', function (e) {
+                const modal = document.getElementById('transactionModal');
+                if (!modal.classList.contains('hidden')) {
+                    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                    for (let item of items) {
+                        if (item.type.indexOf("image") === 0) {
+                            compressAndSetImage(item.getAsFile());
+                            break;
+                        }
+                    }
+                }
+            });
+        };
+
+        // ---------- Tabs ----------
+        function switchTab(tab) {
+            activeTab = tab;
+            const tabDash = document.getElementById('tabDashboard');
+            const tabStmt = document.getElementById('tabStatement');
+            const btnDash = document.getElementById('tabBtnDashboard');
+            const btnStmt = document.getElementById('tabBtnStatement');
+
+            if (tab === 'dashboard') {
+                tabDash.classList.remove('hidden');
+                tabStmt.classList.add('hidden');
+                btnDash.className = "flex-1 py-3 rounded-xl text-center transition-all bg-indigo-600 text-white shadow-sm";
+                btnStmt.className = "flex-1 py-3 rounded-xl text-center transition-all text-slate-600 hover:bg-slate-50";
+            } else {
+                tabDash.classList.add('hidden');
+                tabStmt.classList.remove('hidden');
+                btnStmt.className = "flex-1 py-3 rounded-xl text-center transition-all bg-indigo-600 text-white shadow-sm";
+                btnDash.className = "flex-1 py-3 rounded-xl text-center transition-all text-slate-600 hover:bg-slate-50";
+                renderPersonalStatement();
+            }
+        }
+
+        // ---------- 对账单方向判断 ----------
+        function getContactDirection(target) {
+            const list = transactions.filter(t => t.contact === target);
+            let hasLendLike = false, hasBorrowLike = false;
+            list.forEach(t => {
+                if (t.type === 'lend' || t.type === 'repay_in') hasLendLike = true;
+                if (t.type === 'borrow' || t.type === 'repay_out') hasBorrowLike = true;
+            });
+            if (hasLendLike && hasBorrowLike) return 'both';
+            if (hasLendLike) return 'lend';
+            if (hasBorrowLike) return 'borrow';
+            return 'none';
+        }
+
+        // ---------- 对账单类型快捷筛选（动态渲染） ----------
+        function renderStmtTypeButtons(direction) {
+            const container = document.getElementById('stmtTypeFilterBtns');
+            const area = document.getElementById('stmtTypeFilterArea');
+            if (!container || !area) return;
+
+            if (direction === 'none') {
+                area.classList.add('hidden');
+                container.innerHTML = '';
+                return;
+            }
+            area.classList.remove('hidden');
+
+            const options = [{ value: '', label: '全部' }];
+            if (direction === 'lend' || direction === 'both') {
+                options.push({ value: 'lend', label: '只看借出' });
+                options.push({ value: 'repay_in', label: '只看收回' });
+            }
+            if (direction === 'borrow' || direction === 'both') {
+                options.push({ value: 'borrow', label: '只看借入' });
+                options.push({ value: 'repay_out', label: '只看归还' });
+            }
+
+            container.innerHTML = options.map(o => {
+                const active = stmtTypeFilter === o.value;
+                return `<button onclick="setStmtTypeFilter('${o.value}')" class="stmt-type-btn tap px-3 py-2 rounded-xl text-[13px] font-semibold ${active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600'}">${o.label}</button>`;
+            }).join('');
+        }
+        function setStmtTypeFilter(type) {
+            stmtTypeFilter = type;
+            renderPersonalStatement();
+        }
+
+        // ---------- 对账单备注 ----------
+        function saveStmtRemark() {
+            const v = (document.getElementById('stmtRemark').value || '').trim();
+            stmtRemark = v;
+            localStorage.setItem('ledger_stmt_remark', v);
+            updateStmtRemarkDisplay();
+        }
+        function updateStmtRemarkDisplay() {
+            const display = document.getElementById('stmtRemarkDisplay');
+            const textEl = document.getElementById('stmtRemarkText');
+            if (!display || !textEl) return;
+            if (stmtRemark) {
+                textEl.textContent = stmtRemark;
+                display.classList.remove('hidden');
+            } else {
+                display.classList.add('hidden');
+            }
+        }
+
+        // ---------- Modal ----------
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+            if (id === 'transactionModal' && !document.getElementById('transId').value) {
+                document.getElementById('transDate').valueAsDate = new Date();
+            }
+        }
+        function closeModal(id) {
+            if (id === 'transactionModal' && !skipCloseConfirm) {
+                const hasId = !!document.getElementById('transId').value;
+                const dirty = document.getElementById('transAmount').value ||
+                              document.getElementById('transNote').value ||
+                              document.getElementById('transCategory').value ||
+                              currentProofBase64;
+                if (hasId && dirty) {
+                    if (!confirm('当前编辑尚未保存，确定关闭？')) return;
+                }
+            }
+            skipCloseConfirm = false;
+
+            document.getElementById(id).classList.add('hidden');
+            const anyOpen = MODAL_IDS.some(m => !document.getElementById(m).classList.contains('hidden'));
+            if (!anyOpen) document.body.classList.remove('overflow-hidden');
+
+            if (id === 'transactionModal') {
+                document.getElementById('transactionForm').reset();
+                document.getElementById('transId').value = '';
+                removeProofImage();
+                hideCopyBanner();
+                setModalTitle('new');
+            }
+        }
+        function setModalTitle(mode) {
+            const titleEl = document.getElementById('modalTitle');
+            if (mode === 'copy') {
+                titleEl.innerHTML = '<i class="fa-solid fa-copy text-indigo-300"></i><span>再记一笔 · 已复制上笔</span>';
+            } else if (mode === 'edit') {
+                titleEl.innerHTML = '<i class="fa-solid fa-pen-to-square text-indigo-300"></i><span>编辑往来记录</span>';
+            } else {
+                titleEl.innerHTML = '<i class="fa-solid fa-pen-to-square text-indigo-300"></i><span>记一笔双向往来账</span>';
+            }
+        }
+        function showCopyBanner(text) {
+            document.getElementById('copyBannerText').innerText = text;
+            document.getElementById('copyBanner').classList.remove('hidden');
+        }
+        function hideCopyBanner() {
+            document.getElementById('copyBanner').classList.add('hidden');
+        }
+
+        function openNewTransaction() {
+            if (contacts.length === 0) {
+                showToast('请先添加往来联系人');
+                openContactManager();
+                return;
+            }
+            document.getElementById('transId').value = '';
+            document.getElementById('transactionForm').reset();
+            removeProofImage();
+            hideCopyBanner();
+            setModalTitle('new');
+            document.getElementById('transDate').valueAsDate = new Date();
+            openModal('transactionModal');
+        }
+
+        function openContactManager() { renderContactList(); openModal('contactModal'); }
+        function openBackupModal() {
+            const proofCount = transactions.filter(t => t.proof).length;
+            let proofChars = 0;
+            transactions.forEach(t => { if (t.proof) proofChars += t.proof.length; });
+            const mb = (proofChars / 1024 / 1024).toFixed(2);
+            document.getElementById('backupStats').innerHTML =
+                `当前共 <b class="text-slate-700">${transactions.length}</b> 笔记录、` +
+                `<b class="text-slate-700">${contacts.length}</b> 位联系人、` +
+                `<b class="text-slate-700">${proofCount}</b> 张凭证（约 <b class="text-slate-700">${mb} MB</b>）。`;
+            openModal('backupModal');
+        }
+        function openImagePreview(src) {
+            document.getElementById('highResImage').src = src;
+            openModal('imagePreviewModal');
+        }
+
+        // ---------- 图片 ----------
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (file) compressAndSetImage(file);
+        }
+        function compressAndSetImage(file) {
+            const reader = new FileReader();
+            reader.onload = function (evt) {
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width, height = img.height;
+                    const maxDim = 800;
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round((height * maxDim) / width);
+                            width = maxDim;
+                        } else {
+                            width = Math.round((width * maxDim) / height);
+                            height = maxDim;
+                        }
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                    currentProofBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                    document.getElementById('proofPreviewImg').src = currentProofBase64;
+                    document.getElementById('proofPreviewContainer').classList.remove('hidden');
+                };
+                img.src = evt.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        function removeProofImage() {
+            currentProofBase64 = '';
+            document.getElementById('proofPreviewImg').src = '';
+            document.getElementById('proofPreviewContainer').classList.add('hidden');
+            document.getElementById('transProofInput').value = '';
+        }
+
+        // ---------- 联系人 ----------
+        function renderContactList() {
+            const ul = document.getElementById('contactListUl');
+            ul.innerHTML = '';
+            if (contacts.length === 0) {
+                ul.innerHTML = '<li class="px-3 py-4 text-center text-slate-400 text-[14px]">暂无联系人</li>';
+                return;
+            }
+            contacts.forEach((c, idx) => {
+                const related = transactions.filter(t => t.contact === c).length;
+                const li = document.createElement('li');
+                li.className = "flex items-center justify-between px-3.5 py-3 hover:bg-slate-50 gap-2";
+                li.innerHTML = `
+                    <div class="min-w-0">
+                        <div class="font-medium text-slate-700 break-all">${escapeHtml(c)}</div>
+                        ${related > 0 ? `<div class="text-[11px] text-slate-400 mt-0.5">${related} 笔关联记录</div>` : ''}
+                    </div>
+                    <button onclick="deleteContact(${idx})" class="text-rose-500 hover:text-rose-700 w-9 h-9 flex items-center justify-center shrink-0" title="删除"><i class="fa-solid fa-trash text-[15px]"></i></button>
+                `;
+                ul.appendChild(li);
+            });
+        }
+        function addContact() {
+            const input = document.getElementById('newContactName');
+            const name = input.value.trim();
+            if (!name) return showToast('请输入姓名');
+            if (contacts.includes(name)) return showToast('已存在该联系人');
+            contacts.push(name);
+            input.value = '';
+            if (saveData()) {
+                renderContactList();
+                showToast('联系人已添加');
+            }
+        }
+        function deleteContact(idx) {
+            const name = contacts[idx];
+            const related = transactions.filter(t => t.contact === name).length;
+            if (related > 0) {
+                alert(`「${name}」有 ${related} 笔往来记录，为保证历史对账单可查，不能删除。\n如确需移除，请先处理相关记录。`);
+                return;
+            }
+            const removed = contacts[idx];
+            contacts.splice(idx, 1);
+            if (!saveData()) { contacts.splice(idx, 0, removed); return; }
+            renderContactList();
+            showUndoToast(`联系人「${removed}」已删除`, () => {
+                contacts.splice(Math.min(idx, contacts.length), 0, removed);
+                saveData();
+                renderContactList();
+            });
+        }
+        function updateContactDropdowns() {
+            const selects = [
+                { el: document.getElementById('transContact'), placeholder: null },
+                { el: document.getElementById('filterContact'), placeholder: '全部往来对象' },
+                { el: document.getElementById('statementContactSelect'), placeholder: null }
+            ];
+            selects.forEach(({ el, placeholder }) => {
+                const current = el.value;
+                el.innerHTML = '';
+                if (placeholder) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = placeholder;
+                    el.appendChild(opt);
+                }
+                contacts.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c;
+                    opt.textContent = c;
+                    el.appendChild(opt);
+                });
+                if (Array.from(el.options).some(o => o.value === current)) el.value = current;
+            });
+        }
+        function ensureContactOption(contact) {
+            if (!contact) return;
+            const sel = document.getElementById('transContact');
+            if (!Array.from(sel.options).some(o => o.value === contact)) {
+                const opt = document.createElement('option');
+                opt.value = contact;
+                opt.textContent = contact + '（历史）';
+                sel.appendChild(opt);
+            }
+        }
+
+        // ---------- 交易 ----------
+        function saveTransaction(e) {
+            e.preventDefault();
+            if (isSaving) return;
+            isSaving = true;
+            try {
+                const id = document.getElementById('transId').value || ('t' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+                const date = document.getElementById('transDate').value;
+                const contact = document.getElementById('transContact').value;
+                const type = document.getElementById('transType').value;
+                const amountRaw = document.getElementById('transAmount').value;
+                const amount = parseFloat(amountRaw);
+                const category = document.getElementById('transCategory').value.trim() || '通用往来';
+                const method = document.getElementById('transMethod').value;
+                const note = document.getElementById('transNote').value.trim();
+
+                if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return showToast('请选择正确的发生日期');
+                if (!contact) return showToast('请选择往来对象');
+                if (!amountRaw || !isFinite(amount) || amount <= 0) return showToast('请输入大于 0 的金额');
+                if (amount > 1e10) return showToast('金额过大，请确认后再保存');
+
+                const isCopy = !document.getElementById('copyBanner').classList.contains('hidden');
+                const transObj = { id, date, contact, type, amount, category, method, proof: currentProofBase64, note };
+                const existingIdx = transactions.findIndex(t => t.id === id);
+
+                if (existingIdx >= 0) transactions[existingIdx] = transObj;
+                else transactions.push(transObj);
+
+                const search = (document.getElementById('searchInput').value || '').toLowerCase();
+                const ft = document.getElementById('filterType').value;
+                const fc = document.getElementById('filterContact').value;
+                const visible = (!search ||
+                        (transObj.contact || '').toLowerCase().includes(search) ||
+                        (transObj.category || '').toLowerCase().includes(search) ||
+                        (transObj.note || '').toLowerCase().includes(search)) &&
+                    (!ft || transObj.type === ft) &&
+                    (!fc || transObj.contact === fc);
+
+                if (!visible) {
+                    document.getElementById('searchInput').value = '';
+                    document.getElementById('filterType').value = '';
+                    document.getElementById('filterContact').value = '';
+                }
+
+                lastSavedId = id;
+                skipCloseConfirm = true;
+                closeModal('transactionModal');
+
+                if (saveData()) {
+                    if (existingIdx >= 0) showToast('记录已更新');
+                    else if (isCopy) showToast('已再记一笔');
+                    else showToast('记录已保存');
+                    if (!visible) showToast('已重置筛选，便于查看新记录');
+                }
+            } finally {
+                setTimeout(() => { isSaving = false; }, 250);
+            }
+        }
+
+        function editTransaction(id) {
+            const t = transactions.find(item => item.id === id);
+            if (!t) return;
+            ensureContactOption(t.contact);
+            document.getElementById('transId').value = t.id;
+            document.getElementById('transDate').value = t.date;
+            document.getElementById('transContact').value = t.contact;
+            document.getElementById('transType').value = t.type;
+            document.getElementById('transAmount').value = t.amount;
+            document.getElementById('transCategory').value = t.category;
+            document.getElementById('transMethod').value = t.method;
+            document.getElementById('transNote').value = t.note;
+
+            if (t.proof) {
+                currentProofBase64 = t.proof;
+                document.getElementById('proofPreviewImg').src = t.proof;
+                document.getElementById('proofPreviewContainer').classList.remove('hidden');
+            } else {
+                removeProofImage();
+            }
+            hideCopyBanner();
+            setModalTitle('edit');
+            openModal('transactionModal');
+        }
+
+        function duplicateTransaction(id) {
+            const t = transactions.find(item => item.id === id);
+            if (!t) return;
+            ensureContactOption(t.contact);
+            document.getElementById('transId').value = '';
+            document.getElementById('transDate').valueAsDate = new Date();
+            document.getElementById('transContact').value = t.contact;
+            document.getElementById('transType').value = t.type;
+            document.getElementById('transAmount').value = t.amount;
+            document.getElementById('transCategory').value = t.category;
+            document.getElementById('transMethod').value = t.method;
+            document.getElementById('transNote').value = t.note;
+            removeProofImage();
+            const typeName = TYPE_LABELS[t.type] || '往来';
+            showCopyBanner(`已复制「${t.contact}」的${typeName}记录，日期已设为今天；凭证未复制，如需请重新上传。`);
+            setModalTitle('copy');
+            openModal('transactionModal');
+        }
+
+        function deleteTransaction(id) {
+            const idx = transactions.findIndex(t => t.id === id);
+            if (idx < 0) return;
+            const removed = transactions[idx];
+            transactions.splice(idx, 1);
+            if (!saveData()) { transactions.splice(idx, 0, removed); return; }
+            showUndoToast('记录已删除', () => {
+                transactions.push(removed);
+                saveData();
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('filterType').value = '';
+            document.getElementById('filterContact').value = '';
+            renderTable();
+        }
+        function clearStatementDateFilter() {
+            document.getElementById('stmtStartDate').value = '';
+            document.getElementById('stmtEndDate').value = '';
+            renderPersonalStatement();
+        }
+
+        // ---------- Dashboard ----------
+        function updateDashboard() {
+            let sumLend = 0, sumBorrow = 0, sumRepayIn = 0, sumRepayOut = 0;
+            let countLent = 0, countBorrowed = 0;
+
+            transactions.forEach(t => {
+                if (t.type === 'lend') { sumLend += t.amount; countLent++; }
+                else if (t.type === 'borrow') { sumBorrow += t.amount; countBorrowed++; }
+                else if (t.type === 'repay_in') { sumRepayIn += t.amount; }
+                else if (t.type === 'repay_out') { sumRepayOut += t.amount; }
+            });
+
+            const unsettledLend = sumLend - sumRepayIn;
+            const unsettledBorrow = sumBorrow - sumRepayOut;
+            const net = unsettledLend - unsettledBorrow;
+
+            document.getElementById('statLentTotal').innerText = formatCurrency(Math.max(0, unsettledLend));
+            let lentSub = `累计借出 ${formatCurrency(sumLend)} · ${countLent}笔`;
+            if (unsettledLend < -0.005) lentSub += `（已多收 ${formatCurrency(Math.abs(unsettledLend))}）`;
+            document.getElementById('statLentCount').innerText = lentSub;
+
+            document.getElementById('statBorrowedTotal').innerText = formatCurrency(Math.max(0, unsettledBorrow));
+            let borrowSub = `累计借入 ${formatCurrency(sumBorrow)} · ${countBorrowed}笔`;
+            if (unsettledBorrow < -0.005) borrowSub += `（已多还 ${formatCurrency(Math.abs(unsettledBorrow))}）`;
+            document.getElementById('statBorrowedCount').innerText = borrowSub;
+
+            const netElem = document.getElementById('statNetBalance');
+            const badgeElem = document.getElementById('statNetBadge');
+            netElem.innerText = formatCurrency(Math.abs(net));
+
+            if (net > 0.005) {
+                netElem.className = "text-[22px] leading-tight font-extrabold text-blue-600 mt-1.5 num";
+                badgeElem.innerText = "对方净欠我";
+            } else if (net < -0.005) {
+                netElem.className = "text-[22px] leading-tight font-extrabold text-amber-600 mt-1.5 num";
+                badgeElem.innerText = "我净欠对方";
+            } else {
+                netElem.className = "text-[22px] leading-tight font-extrabold text-slate-800 mt-1.5 num";
+                badgeElem.innerText = "账目已平";
+            }
+
+            document.getElementById('statContactCount').innerText = `${contacts.length} 位`;
+        }
+
+        // ---------- 概览列表 ----------
+        function renderTable() {
+            const search = (document.getElementById('searchInput').value || '').toLowerCase();
+            const filterType = document.getElementById('filterType').value;
+            const filterContact = document.getElementById('filterContact').value;
+
+            const filtered = transactions.filter(t => {
+                const matchSearch = (t.contact || '').toLowerCase().includes(search) ||
+                                    (t.category || '').toLowerCase().includes(search) ||
+                                    (t.note || '').toLowerCase().includes(search);
+                const matchType = !filterType || t.type === filterType;
+                const matchContact = !filterContact || t.contact === filterContact;
+                return matchSearch && matchType && matchContact;
+            });
+
+            filtered.sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.id).localeCompare(String(a.id)));
+
+            const container = document.getElementById('transactionCardsContainer');
+            const emptyState = document.getElementById('emptyState');
+            const visibleCountEl = document.getElementById('visibleCount');
+            container.innerHTML = '';
+            if (visibleCountEl) visibleCountEl.innerText = filtered.length;
+
+            if (filtered.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+            }
+
+            filtered.forEach(t => {
+                let typeTag = '', amountClass = '', prefix = '';
+                switch (t.type) {
+                    case 'lend':
+                        typeTag = '<span class="px-2 py-0.5 rounded-md text-[12px] font-semibold bg-blue-100 text-blue-700 whitespace-nowrap">我借给对方</span>';
+                        amountClass = 'text-blue-600'; prefix = '+'; break;
+                    case 'borrow':
+                        typeTag = '<span class="px-2 py-0.5 rounded-md text-[12px] font-semibold bg-amber-100 text-amber-700 whitespace-nowrap">对方借给我</span>';
+                        amountClass = 'text-amber-600'; prefix = '+'; break;
+                    case 'repay_in':
+                        typeTag = '<span class="px-2 py-0.5 rounded-md text-[12px] font-semibold bg-emerald-100 text-emerald-700 whitespace-nowrap">对方还给我</span>';
+                        amountClass = 'text-emerald-600'; prefix = '-'; break;
+                    case 'repay_out':
+                        typeTag = '<span class="px-2 py-0.5 rounded-md text-[12px] font-semibold bg-purple-100 text-purple-700 whitespace-nowrap">我还给对方</span>';
+                        amountClass = 'text-purple-600'; prefix = '-'; break;
+                }
+
+                const hlContact = highlight(t.contact, search);
+                const hlCategory = highlight(t.category || '未分类', search);
+                const hlNote = highlight(t.note || '', search);
+                const methodSafe = escapeHtml(t.method || '未说明');
+                const dateSafe = escapeHtml(t.date);
+
+                let proofHTML = '';
+                if (t.proof) {
+                    proofHTML = `<img src="${t.proof}" onclick="openImagePreview('${t.proof}')" class="w-11 h-11 rounded-lg border object-cover cursor-pointer hover:opacity-80 shrink-0" title="点击预览放大凭证">`;
+                }
+
+                const card = document.createElement('div');
+                card.className = "bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-2.5";
+                card.innerHTML = `
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex items-center gap-2 flex-wrap min-w-0">
+                            <span class="font-bold text-[15px] text-slate-800 break-all">${hlContact}</span>
+                            ${typeTag}
+                        </div>
+                        <div class="font-extrabold text-[17px] ${amountClass} num whitespace-nowrap shrink-0">${prefix}${formatCurrency(t.amount)}</div>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap text-[13px] text-slate-500">
+                        <span class="whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-slate-400"></i>${dateSafe}</span>
+                        <span class="bg-slate-100 px-2 py-0.5 rounded-md text-slate-600">${hlCategory}</span>
+                        <span class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md">${methodSafe}</span>
+                    </div>
+                    ${t.note ? `<div class="text-[13px] leading-relaxed text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 break-words">${hlNote}</div>` : ''}
+                    <div class="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                        <div class="flex items-center gap-1 shrink-0">${proofHTML}</div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button onclick="duplicateTransaction('${t.id}')" class="tap h-11 px-3 rounded-xl bg-emerald-50 text-emerald-700 active:bg-emerald-100 text-[13px] font-semibold flex items-center gap-1.5" title="复制上笔信息，快速再记一笔">
+                                <i class="fa-solid fa-copy text-[14px]"></i><span>再记</span>
+                            </button>
+                            <button onclick="editTransaction('${t.id}')" class="tap w-11 h-11 flex items-center justify-center rounded-xl text-slate-500 bg-slate-100 active:bg-indigo-100 active:text-indigo-700" title="编辑"><i class="fa-solid fa-pen text-[15px]"></i></button>
+                            <button onclick="deleteTransaction('${t.id}')" class="tap w-11 h-11 flex items-center justify-center rounded-xl text-slate-500 bg-slate-100 active:bg-rose-100 active:text-rose-700" title="删除"><i class="fa-solid fa-trash text-[15px]"></i></button>
+                        </div>
+                    </div>
+                `;
+
+                if (t.id === lastSavedId) {
+                    card.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-2', 'ring-offset-slate-100');
+                    setTimeout(() => {
+                        card.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-2', 'ring-offset-slate-100');
+                        if (lastSavedId === t.id) lastSavedId = null;
+                    }, 2600);
+                    setTimeout(() => { try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }, 150);
+                }
+
+                container.appendChild(card);
+            });
+        }
+
+        // ---------- 对账单汇总卡片（按方向动态显示） ----------
+        function updateStatementSummaryCards(direction, stats) {
+            const c1Label = document.getElementById('stmtCard1Label');
+            const c2Label = document.getElementById('stmtCard2Label');
+            const c1 = document.getElementById('stmtLentSum');
+            const c2 = document.getElementById('stmtRepayInSum');
+
+            if (direction === 'borrow') {
+                c1Label.textContent = '区间借入';
+                c2Label.textContent = '区间归还';
+                c1.innerText = formatCurrency(stats.borrow);
+                c1.className = 'text-[14px] sm:text-base font-bold text-amber-600 mt-1 num';
+                c2.innerText = formatCurrency(stats.repayOut);
+                c2.className = 'text-[14px] sm:text-base font-bold text-purple-600 mt-1 num';
+            } else if (direction === 'lend') {
+                c1Label.textContent = '区间借出';
+                c2Label.textContent = '区间收回';
+                c1.innerText = formatCurrency(stats.lend);
+                c1.className = 'text-[14px] sm:text-base font-bold text-blue-600 mt-1 num';
+                c2.innerText = formatCurrency(stats.repayIn);
+                c2.className = 'text-[14px] sm:text-base font-bold text-emerald-600 mt-1 num';
+            } else {
+                c1Label.textContent = '区间借出';
+                c2Label.textContent = '区间收回';
+                c1.innerText = formatCurrency(stats.lend);
+                c1.className = 'text-[14px] sm:text-base font-bold text-blue-600 mt-1 num';
+                c2.innerText = formatCurrency(stats.repayIn);
+                c2.className = 'text-[14px] sm:text-base font-bold text-emerald-600 mt-1 num';
+            }
+
+            const el = document.getElementById('stmtCurrentBalance');
+            const bal = stats.balance;
+            if (bal > 0.005) {
+                el.innerText = `+${formatCurrency(bal)} (对方欠我)`;
+                el.className = 'text-[14px] sm:text-base font-extrabold text-blue-600 mt-1 num';
+            } else if (bal < -0.005) {
+                el.innerText = `-${formatCurrency(Math.abs(bal))} (我欠对方)`;
+                el.className = 'text-[14px] sm:text-base font-extrabold text-amber-600 mt-1 num';
+            } else {
+                el.innerText = '¥0.00 (结清)';
+                el.className = 'text-[14px] sm:text-base font-extrabold text-emerald-600 mt-1 num';
+            }
+        }
+
+        // ---------- 对账单 ----------
+        function renderPersonalStatement() {
+            const select = document.getElementById('statementContactSelect');
+            if (!select.value && contacts.length > 0) select.value = contacts[0];
+            const target = select.value;
+            if (!target) return;
+
+            let startDate = document.getElementById('stmtStartDate').value;
+            let endDate = document.getElementById('stmtEndDate').value;
+            if (startDate && endDate && startDate > endDate) {
+                [startDate, endDate] = [endDate, startDate];
+                document.getElementById('stmtStartDate').value = startDate;
+                document.getElementById('stmtEndDate').value = endDate;
+                showToast('已自动交换起止日期');
+            }
+
+            const direction = getContactDirection(target);
+            const allowedTypes = {
+                lend: ['lend', 'repay_in'],
+                borrow: ['borrow', 'repay_out'],
+                both: ['lend', 'borrow', 'repay_in', 'repay_out'],
+                none: []
+            };
+            if (!allowedTypes[direction].includes(stmtTypeFilter)) stmtTypeFilter = '';
+            renderStmtTypeButtons(direction);
+
+            const dirHint = document.getElementById('stmtDirectionHint');
+            const dirText = document.getElementById('stmtDirectionText');
+            if (direction === 'lend') {
+                dirText.innerHTML = '本联系人为<b class="text-blue-700">单向借出关系</b>（我借出 → 对方收回），无需记录借入。';
+                dirHint.classList.remove('hidden');
+            } else if (direction === 'borrow') {
+                dirText.innerHTML = '本联系人为<b class="text-amber-700">单向借入关系</b>（对方借入 → 我收回），无需记录借出。';
+                dirHint.classList.remove('hidden');
+            } else if (direction === 'both') {
+                dirText.innerHTML = '本联系人有<b class="text-indigo-700">双向往来记录</b>（借出与借入并存），建议核对后分开处理。';
+                dirHint.classList.remove('hidden');
+            } else {
+                dirHint.classList.add('hidden');
+            }
+
+            document.getElementById('stmtPersonTitle').innerText = `${target} - 往来对账明细表`;
+            document.getElementById('stmtDateStr').innerText = `生成日期: ${new Date().toISOString().slice(0, 10)}`;
+            document.getElementById('stmtGenerateTime').innerText = new Date().toLocaleString();
+
+            const hint = document.getElementById('stmtFilterHint');
+            const hintText = document.getElementById('stmtFilterHintText');
+            if (stmtTypeFilter) {
+                hint.classList.remove('hidden');
+                hintText.textContent = `已按类型筛选「${TYPE_LABELS[stmtTypeFilter] || stmtTypeFilter}」：表格仅显示所选类型，余额列仍按全部交易累计。`;
+            } else {
+                hint.classList.add('hidden');
+            }
+
+            let personTrans = transactions.filter(t => t.contact === target);
+            personTrans.sort((a, b) => (a.date || '').localeCompare(b.date || '') || String(a.id).localeCompare(String(b.id)));
+
+            const tbody = document.getElementById('statementTableBody');
+            tbody.innerHTML = '';
+
+            let openingBalance = 0;
+            personTrans.forEach(t => {
+                if (startDate && t.date < startDate) openingBalance += txDelta(t);
+            });
+
+            let allLend = 0, allRepayIn = 0, allBorrow = 0, allRepayOut = 0, allCount = 0;
+            let displayTrans = [];
+            let runningBalance = openingBalance;
+            const balanceAfter = new Map();
+
+            personTrans.forEach(t => {
+                const inRange = (!startDate || t.date >= startDate) && (!endDate || t.date <= endDate);
+                if (!inRange) return;
+                allCount++;
+                if (t.type === 'lend') allLend += t.amount;
+                else if (t.type === 'borrow') allBorrow += t.amount;
+                else if (t.type === 'repay_in') allRepayIn += t.amount;
+                else if (t.type === 'repay_out') allRepayOut += t.amount;
+
+                runningBalance += txDelta(t);
+                balanceAfter.set(t.id, runningBalance);
+
+                if (!stmtTypeFilter || t.type === stmtTypeFilter) displayTrans.push(t);
+            });
+            const closingBalance = runningBalance;
+
+            if (startDate && Math.abs(openingBalance) > 0.005) {
+                let initialBalText = formatCurrency(Math.abs(openingBalance));
+                let initialClass = 'text-slate-700';
+                if (openingBalance > 0) {
+                    initialBalText = `+${initialBalText} (欠我)`;
+                    initialClass = 'text-blue-700 font-bold';
+                } else {
+                    initialBalText = `-${initialBalText} (我欠)`;
+                    initialClass = 'text-amber-700 font-bold';
+                }
+                const trPre = document.createElement('tr');
+                trPre.className = "bg-amber-50/70 border-b border-amber-100 text-amber-900";
+                trPre.innerHTML = `
+                    <td class="py-3 px-2.5 sticky left-0 z-10 bg-amber-50 font-semibold whitespace-nowrap text-[12px]">前期结转</td>
+                    <td class="py-3 px-2 whitespace-nowrap text-[12px]">至 ${escapeHtml(startDate)}</td>
+                    <td class="py-3 px-2 text-right">-</td>
+                    <td class="py-3 px-2">-</td>
+                    <td class="py-3 px-2 text-right ${initialClass} num">${initialBalText}</td>
+                    <td class="py-3 px-2 proof-col">-</td>
+                    <td class="py-3 px-2.5 text-[12px] text-amber-700/80">此日期前的累计未结余额（按全部类型）</td>
+                `;
+                tbody.appendChild(trPre);
+            }
+
+            if (displayTrans.length === 0 && allCount === 0 && Math.abs(openingBalance) < 0.005) {
+                const dateHint = (startDate || endDate) ? `当前筛选 ${escapeHtml(startDate || '不限')} 至 ${escapeHtml(endDate || '不限')}，` : '';
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400 text-[13px] empty-row">${dateHint}暂无与 ${escapeHtml(target)} 的往来记录${(startDate || endDate) ? '，可尝试重置日期' : ''}</td></tr>`;
+                updateStatementSummaryCards(direction, { lend: allLend, repayIn: allRepayIn, borrow: allBorrow, repayOut: allRepayOut, balance: closingBalance });
+                updateStmtRemarkDisplay();
+                return;
+            }
+
+            if (displayTrans.length === 0 && allCount > 0) {
+                const typeName = TYPE_LABELS[stmtTypeFilter] || stmtTypeFilter;
+                const trHint = document.createElement('tr');
+                trHint.className = "bg-white";
+                trHint.innerHTML = `<td colspan="7" class="py-6 text-center text-slate-400 text-[13px]">当前筛选「${escapeHtml(typeName)}」下无记录，区间内共有 ${allCount} 笔其他类型交易</td>`;
+                tbody.appendChild(trHint);
+            } else if (displayTrans.length > 0) {
+                const monthMap = new Map();
+                displayTrans.forEach(t => {
+                    const m = (t.date || '').slice(0, 7);
+                    if (!m) return;
+                    if (!monthMap.has(m)) monthMap.set(m, { count: 0, delta: 0 });
+                    const g = monthMap.get(m);
+                    g.count++;
+                    g.delta += txDelta(t);
+                });
+
+                let lastMonth = null;
+                // ★ 按月重置斑马纹：每个月的第一行固定为白底，第二行淡蓝，依此类推
+                let rowSeq = 0;
+
+                displayTrans.forEach(t => {
+                    const month = (t.date || '').slice(0, 7);
+                    if (month && month !== lastMonth) {
+                        lastMonth = month;
+                        rowSeq = 0;
+                        const g = monthMap.get(month) || { count: 0, delta: 0 };
+                        const parts = month.split('-');
+                        const yy = parts[0], mm = parts[1];
+                        let deltaText;
+                        if (stmtTypeFilter) {
+                            deltaText = `${g.count} 笔（已筛选）`;
+                        } else if (g.delta > 0.005) {
+                            deltaText = `${g.count} 笔 · 余额增加 +${formatCurrency(g.delta)}`;
+                        } else if (g.delta < -0.005) {
+                            deltaText = `${g.count} 笔 · 余额减少 -${formatCurrency(Math.abs(g.delta))}`;
+                        } else {
+                            deltaText = `${g.count} 笔 · 余额无变化`;
+                        }
+                        const trMonth = document.createElement('tr');
+                        trMonth.className = "bg-indigo-50 border-y-2 border-indigo-200";
+                        trMonth.innerHTML = `
+                            <td class="py-2.5 px-2.5 sticky left-0 z-10 bg-indigo-50 border-l-4 border-indigo-500 font-bold text-[12px] text-indigo-900 whitespace-nowrap">${escapeHtml(yy)}年${escapeHtml(mm)}月</td>
+                            <td colspan="6" class="month-summary py-2.5 px-2.5 text-[12px] text-indigo-800 font-medium whitespace-nowrap">${deltaText}</td>
+                        `;
+                        tbody.appendChild(trMonth);
+                    }
+
+                    const bal = balanceAfter.get(t.id) ?? 0;
+                    let typeLabel = '', typeTagClass = '';
+                    if (t.type === 'lend') { typeLabel = '借出'; typeTagClass = 'bg-blue-100 text-blue-700'; }
+                    else if (t.type === 'borrow') { typeLabel = '借入'; typeTagClass = 'bg-amber-100 text-amber-700'; }
+                    else if (t.type === 'repay_in') { typeLabel = '收回还款'; typeTagClass = 'bg-emerald-100 text-emerald-700'; }
+                    else if (t.type === 'repay_out') { typeLabel = '归还欠款'; typeTagClass = 'bg-purple-100 text-purple-700'; }
+
+                    let balText = formatCurrency(Math.abs(bal));
+                    let balClass = 'text-slate-700';
+                    if (bal > 0.005) { balText = `+${balText} (欠我)`; balClass = 'text-blue-700 font-bold'; }
+                    else if (bal < -0.005) { balText = `-${balText} (我欠)`; balClass = 'text-amber-700 font-bold'; }
+                    else { balText = '¥0.00 (两平)'; balClass = 'text-slate-400'; }
+
+                    const proofCell = t.proof
+                        ? `<img src="${t.proof}" onclick="openImagePreview('${t.proof}')" class="w-8 h-8 rounded border object-cover cursor-pointer hover:opacity-80 inline-block" title="点击查看大图">`
+                        : `<span class="text-slate-300">-</span>`;
+
+                    const rawNote = t.note ? `${t.note} (${t.category || '未分类'})` : (t.category || '未分类');
+                    const noteText = escapeHtml(rawNote);
+
+                    // ★ 按月重置斑马纹：不透明淡蓝底，肉眼可辨
+                    const stripe = rowSeq % 2 === 1;
+                    const rowBg = stripe ? 'bg-blue-50' : 'bg-white';
+                    const stickyBg = stripe ? 'bg-blue-50' : 'bg-white';
+                    rowSeq++;
+
+                    const tr = document.createElement('tr');
+                    tr.className = `${rowBg} border-b border-slate-200`;
+                    tr.innerHTML = `
+                        <td class="py-3 px-2.5 font-medium text-slate-600 whitespace-nowrap sticky left-0 z-10 ${stickyBg} text-[12.5px]">${escapeHtml(t.date)}</td>
+                        <td class="py-3 px-2 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 rounded-md text-[12px] font-semibold ${typeTagClass}">${typeLabel}</span></td>
+                        <td class="py-3 px-2 text-right font-bold whitespace-nowrap num text-[14px] text-slate-800">${formatCurrency(t.amount)}</td>
+                        <td class="py-3 px-2 whitespace-nowrap"><span class="bg-white/80 text-slate-600 px-2 py-1 rounded-md text-[12px] border border-slate-200">${escapeHtml(t.method || '未说明')}</span></td>
+                        <td class="py-3 px-2 text-right ${balClass} whitespace-nowrap num">${balText}</td>
+                        <td class="py-3 px-2 whitespace-nowrap proof-col">${proofCell}</td>
+                        <td class="py-3 px-2.5 text-slate-500 leading-relaxed break-words min-w-[150px] text-[12.5px]">${noteText}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            // ★ 区间合计行：去掉所有“-”占位，合并中间空白列，只保留笔数、期末余额、日期范围
+            if (allCount > 0 || Math.abs(openingBalance) > 0.005) {
+                let closingText = formatCurrency(Math.abs(closingBalance));
+                let closingSuffix = '';
+                if (closingBalance > 0.005) closingSuffix = ' (对方欠我)';
+                else if (closingBalance < -0.005) closingSuffix = ' (我欠对方)';
+                else { closingText = '¥0.00'; closingSuffix = ' (已结清)'; }
+
+                const countText = stmtTypeFilter ? `${displayTrans.length}/${allCount} 笔` : `共 ${allCount} 笔`;
+                const dateRangeText = (startDate && endDate) ? `${startDate} ~ ${endDate}`
+                    : startDate ? `${startDate} 起`
+                    : endDate ? `至 ${endDate}`
+                    : '全部期间';
+
+                const trTotal = document.createElement('tr');
+                trTotal.className = "stmt-total-row bg-indigo-900 text-white";
+                trTotal.innerHTML = `
+                    <td class="py-3.5 px-2.5 sticky left-0 z-10 bg-indigo-900 whitespace-nowrap text-[12px] font-semibold">区间合计</td>
+                    <td class="py-3.5 px-2 whitespace-nowrap text-[12px] text-indigo-200">${countText}</td>
+                    <td colspan="2" class="py-3.5 px-2"></td>
+                    <td class="py-3.5 px-2 text-right whitespace-nowrap">
+                        <span class="text-[10px] text-indigo-300 font-normal mr-1">期末</span><span class="text-[13px] font-bold">${closingText}${closingSuffix}</span>
+                    </td>
+                    <td class="py-3.5 px-2 proof-col"></td>
+                    <td class="py-3.5 px-2.5 text-[11px] text-indigo-300 whitespace-nowrap">${dateRangeText}</td>
+                `;
+                tbody.appendChild(trTotal);
+            }
+
+            updateStatementSummaryCards(direction, { lend: allLend, repayIn: allRepayIn, borrow: allBorrow, repayOut: allRepayOut, balance: closingBalance });
+            updateStmtRemarkDisplay();
+        }
+
+        // ---------- 截图 ----------
+        async function captureStatementScreenshot() {
+            const originalArea = document.getElementById('statementCaptureArea');
+            const targetPerson = document.getElementById('statementContactSelect').value;
+            const btn = document.getElementById('captureBtn');
+
+            if (!targetPerson) {
+                alert('请先选择往来人。');
+                return;
+            }
+
+            const origBtnText = btn.innerHTML;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>对账单渲染中...</span>`;
+            btn.disabled = true;
+
+            const clone = originalArea.cloneNode(true);
+            const container = document.createElement('div');
+            container.style.position = 'absolute';
+            container.style.top = '-9999px';
+            container.style.left = '-9999px';
+            container.style.width = '800px';
+
+            clone.style.width = '800px';
+            clone.style.padding = '24px';
+            clone.style.backgroundColor = '#ffffff';
+            container.appendChild(clone);
+            document.body.appendChild(container);
+
+            const clonedTbody = clone.querySelector('#statementTableBody');
+            if (clonedTbody && clonedTbody.querySelector('.empty-row')) {
+                container.remove();
+                btn.innerHTML = origBtnText;
+                btn.disabled = false;
+                alert('当前筛选条件下没有记录，请调整日期或选择其他联系人后再生成。');
+                return;
+            }
+
+            try {
+                const clonedTable = clone.querySelector('table');
+                if (clonedTable) {
+                    clonedTable.querySelectorAll('.proof-col').forEach(el => el.remove());
+                    clonedTable.querySelectorAll('.empty-row').forEach(el => el.setAttribute('colspan', '6'));
+                    clonedTable.querySelectorAll('.month-summary').forEach(el => el.setAttribute('colspan', '5'));
+                    const lastTh = clonedTable.querySelector('thead tr th:last-child');
+                    if (lastTh) lastTh.classList.add('rounded-r-lg');
+                }
+                clone.querySelectorAll('.sticky').forEach(el => {
+                    el.classList.remove('sticky', 'left-0', 'z-10', 'z-20');
+                });
+            } catch (e) {
+                console.warn('截图预处理失败（不影响截图）', e);
+            }
+
+            try {
+                await new Promise(r => setTimeout(r, 150));
+
+                const canvas = await html2canvas(clone, {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: "#ffffff",
+                    logging: false
+                });
+
+                container.remove();
+
+                const dataUrl = canvas.toDataURL("image/png");
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                const safeName = String(targetPerson || '对账单').replace(/[\\/:*?"<>|]/g, '_').slice(0, 30);
+                const fileName = `对账单_${safeName}.png`;
+
+                if (isMobile && navigator.share && navigator.canShare) {
+                    try {
+                        const blob = await (await fetch(dataUrl)).blob();
+                        const file = new File([blob], fileName, { type: 'image/png' });
+                        if (navigator.canShare({ files: [file] })) {
+                            await navigator.share({
+                                files: [file],
+                                title: `对账单_${safeName}`,
+                                text: `与 ${targetPerson} 的往来对账明细`
+                            });
+                            btn.innerHTML = origBtnText;
+                            btn.disabled = false;
+                            return;
+                        }
+                    } catch (shareErr) {
+                        console.log('Native share bypassed or user cancelled, falling back to modal');
+                    }
+                }
+
+                document.getElementById('exportResultImg').src = dataUrl;
+                openModal('exportPreviewModal');
+
+                if (!isMobile) {
+                    const link = document.createElement('a');
+                    link.href = dataUrl;
+                    link.download = `对账单_${safeName}_${new Date().toISOString().slice(0, 10)}.png`;
+                    link.click();
+                }
+
+            } catch (err) {
+                console.error('Canvas capture failed:', err);
+                if (container.parentNode) container.remove();
+                alert('生成对账单图片失败，请尝试重启浏览器或更换 Chrome 浏览器');
+            } finally {
+                btn.innerHTML = origBtnText;
+                btn.disabled = false;
+            }
+        }
+
+        // ---------- 备份 ----------
+        function exportJSONBackup() {
+            const data = { contacts, transactions, version: "7.2-SafariMobileCleanTotal", exportDate: new Date().toISOString() };
+            try {
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `台账凭证数据备份_${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('备份文件已导出');
+            } catch (err) {
+                alert('导出失败：' + err.message);
+            }
+        }
+
+        function importJSONBackup() {
+            const fileInput = document.getElementById('importFile');
+            if (!fileInput.files.length) return alert('请选择备份文件');
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!data || !Array.isArray(data.contacts) || !Array.isArray(data.transactions)) {
+                        return alert('备份文件格式不正确：缺少 contacts 或 transactions 数组。');
+                    }
+
+                    const rawTrans = data.transactions;
+                    const validTrans = [];
+                    const seenIds = new Set();
+                    let skipped = 0;
+
+                    rawTrans.forEach(item => {
+                        if (!item || !item.contact || !item.type || !item.date || isNaN(Number(item.amount))) {
+                            skipped++;
+                            return;
+                        }
+                        let id = String(item.id || '');
+                        if (!/^[\w-]{1,64}$/.test(id) || seenIds.has(id)) {
+                            id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+                        }
+                        seenIds.add(id);
+                        validTrans.push({
+                            id,
+                            date: String(item.date).slice(0, 10),
+                            contact: String(item.contact),
+                            type: ['lend', 'borrow', 'repay_in', 'repay_out'].includes(item.type) ? item.type : 'lend',
+                            amount: Number(item.amount),
+                            category: String(item.category || '通用往来'),
+                            method: String(item.method || '其他'),
+                            proof: typeof item.proof === 'string' && /^data:image\//.test(item.proof) ? item.proof : '',
+                            note: String(item.note || '')
+                        });
+                    });
+
+                    const allNames = new Set(data.contacts.map(c => String(c).trim()).filter(Boolean));
+                    validTrans.forEach(t => allNames.add(t.contact));
+                    const newContacts = Array.from(allNames);
+
+                    const msg = `即将覆盖当前数据：\n当前 ${transactions.length} 笔记录 / ${contacts.length} 位联系人\n` +
+                        `将导入 ${validTrans.length} 笔记录 / ${newContacts.length} 位联系人` +
+                        (skipped ? `\n（已跳过 ${skipped} 条格式不完整的记录）` : '') +
+                        `\n\n此操作不可撤销，建议先导出当前备份。确定继续？`;
+                    if (!confirm(msg)) return;
+
+                    contacts = newContacts;
+                    transactions = validTrans;
+                    lastSavedId = null;
+                    if (saveData()) {
+                        closeModal('backupModal');
+                        showToast('数据已成功导入');
+                    }
+                } catch (err) {
+                    alert('解析 JSON 文件失败：' + err.message);
+                }
+            };
+            reader.readAsText(fileInput.files[0]);
+        }
+    </script>
+</body>
+</html>
